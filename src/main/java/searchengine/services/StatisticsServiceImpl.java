@@ -50,7 +50,7 @@ public class StatisticsServiceImpl implements StatisticsService {
             item.setStatus(site.getStatus().name());
             item.setError(site.getLastError());
             item.setStatusTime(System.currentTimeMillis() -
-                    (rando.nextInt(10_000)));
+                    (.nextInt(10_000)));
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
             detailed.add(item);
