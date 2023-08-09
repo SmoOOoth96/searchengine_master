@@ -7,7 +7,4 @@ import searchengine.model.Site;
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
     void deleteAllByName(String name);
-
-
-    Site findOneByName(String name);
 }

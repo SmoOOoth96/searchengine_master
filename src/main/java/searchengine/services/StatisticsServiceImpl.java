@@ -11,6 +11,7 @@ import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -43,14 +44,13 @@ public class StatisticsServiceImpl implements StatisticsService {
             DetailedStatisticsItem item = new DetailedStatisticsItem();
             item.setName(site.getName());
             item.setUrl(site.getUrl());
-            long pages = siteRepository.count();
-            long lemmas = lemmaRepository.count();
+            int pages = (int)siteRepository.count();
+            int lemmas = (int)lemmaRepository.count();
             item.setPages(pages);
             item.setLemmas(lemmas);
             item.setStatus(site.getStatus().name());
             item.setError(site.getLastError());
-            item.setStatusTime(System.currentTimeMillis() -
-                    (.nextInt(10_000)));
+            item.setStatusTime(site.getDateTime().atZone(ZoneId.of("Asia/Karachi")).toInstant().toEpochMilli());
             total.setPages(total.getPages() + pages);
             total.setLemmas(total.getLemmas() + lemmas);
             detailed.add(item);
