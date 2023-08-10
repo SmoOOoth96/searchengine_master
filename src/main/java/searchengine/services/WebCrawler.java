@@ -4,6 +4,8 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import searchengine.model.Page;
+import searchengine.model.Site;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
@@ -16,24 +18,20 @@ import java.util.regex.Pattern;
 
 public class WebCrawler extends RecursiveAction {
     private final String url;
-    private final PageRepository pageRepository;
-    private final SiteRepository siteRepository;
-    private final WebCrawler parent;
+    private final Site site;
+    private static PageRepository pageRepository;
+    private static SiteRepository siteRepository;
 
-
-
-    public WebCrawler(String url, WebCrawler parent) {
+    public WebCrawler(String url, PageRepository pageRepository, SiteRepository siteRepository) {
         this.url = url;
-        this.parent = parent;
-        this.pageRepository = parent.pageRepository;
-        this.siteRepository = parent.siteRepository;
+        WebCrawler.pageRepository = pageRepository;
+        WebCrawler.siteRepository = siteRepository;
+        this.site = siteRepository.findByUrl(getFullDomainName(url));
     }
 
-    public WebCrawler(String url, PageRepository pageRepository, SiteRepository siteRepository, WebCrawler parent) {
+    public WebCrawler(String url) {
         this.url = url;
-        this.pageRepository = pageRepository;
-        this.siteRepository = siteRepository;
-        this.parent = parent;
+        this.site = siteRepository.findByUrl(getFullDomainName(url));
     }
 
     @Override
@@ -45,13 +43,19 @@ public class WebCrawler extends RecursiveAction {
             Elements elements = document.select("a");
             for (Element s :
                     elements) {
-                String newUrl = s.attr("href");
+                String entryUrl = s.attr("href");
+                int statusCode = document.connection().response().statusCode();
 
-                newUrl = makeAbsUrl(newUrl);
+                String newUrl = makeAbsUrl(entryUrl);
 
-                if(isUrlValid(newUrl)){
-                    pag.add(newUrl);
-                    WebCrawler app = new WebCrawler(newUrl, this);
+                if(isUrlValid(newUrl, entryUrl)){
+                    WebCrawler app = new WebCrawler(newUrl);
+                    Page newPage = new Page();
+                    newPage.setCode(statusCode);
+                    newPage.setSite(this.site);
+                    newPage.setContent(document.html());
+                    newPage.setPath(entryUrl);
+                    pageRepository.save(newPage);
                     app.fork();
                     appList.add(app);
                 }
@@ -70,15 +74,6 @@ public class WebCrawler extends RecursiveAction {
         return url;
     }
 
-    //получить из https://lenta.ru/news/2023/08/07/uuuar/ доменное имя => lenta.ru
-    private String getDomainName(String url) {
-        Pattern domainName = Pattern.compile("\\w+\\.(com|ru|org|net|de)");
-        Matcher matcher = domainName.matcher(url);
-
-        return matcher.find() ? matcher.group() : url;
-    }
-
-
     //получить из https://lenta.ru/news/2023/08/07/uuuar/ полное доменное имя https://lenta.ru/
     private String getFullDomainName(String url) {
         Pattern fullDomainName = Pattern.compile("https://(www)?\\.\\w+\\.(com|ru|org|net|de)/");
@@ -88,9 +83,8 @@ public class WebCrawler extends RecursiveAction {
     }
 
     //проверка на валидность ссылки
-    private boolean isUrlValid(String newUrl) {
-        if (!newUrl.equals(url)
-                && !newUrl.endsWith("pdf")
+    private boolean isUrlValid(String newUrl, String entryUrl) {
+        return !newUrl.endsWith("pdf")
                 && !newUrl.endsWith("jpg")
                 && !newUrl.endsWith("jpeg")
                 && !newUrl.endsWith("png")
@@ -98,17 +92,7 @@ public class WebCrawler extends RecursiveAction {
                 && !newUrl.endsWith("zip")
                 && !newUrl.endsWith("bmp")
                 && !newUrl.endsWith("exe")
-                && newUrl.contains(getFullDomainName(newUrl))
-                && !.contains(newUrl))
-        {
-            if(newUrl.endsWith(".text")){
-                System.out.println("TEXT FILE");
-            }
-            if(newUrl.contains(getDomainName(newUrl)) && !newUrl.contains(getFullDomainName(newUrl)) && !newUrl.endsWith(".html")){
-                System.out.println("ДРУГИЕ ССЫЛКИ");
-            }
-            return true;
-        }
-        return false;
+                && newUrl.startsWith(this.site.getUrl())
+                && !pageRepository.existsByPath(entryUrl);
     }
 }

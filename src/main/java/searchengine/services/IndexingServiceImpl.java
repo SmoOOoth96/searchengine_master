@@ -1,9 +1,5 @@
 package searchengine.services;
 
-import org.jsoup.Jsoup;
-import org.jsoup.nodes.Document;
-import org.jsoup.nodes.Element;
-import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.SitesList;
@@ -15,9 +11,9 @@ import searchengine.model.Status;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.concurrent.ForkJoinPool;
 
 @Service
 public class IndexingServiceImpl implements IndexingService{
@@ -35,7 +31,9 @@ public class IndexingServiceImpl implements IndexingService{
     public IndexingErrorResponse startIndexing() {
         Site site = null;
         IndexingErrorResponse response = null;
+        ForkJoinPool forkJoinPool = null;
         try {
+            forkJoinPool = new ForkJoinPool();
             List<Site> sites = sitesList.getSites();
             response = new IndexingErrorResponse();
             response.setResult(true);
@@ -47,13 +45,18 @@ public class IndexingServiceImpl implements IndexingService{
                 site.setName(sites.get(i).getName());
                 siteRepository.deleteAllByName(sites.get(i).getName());//удаляем все записи таблиц Site и Page с базы
                 siteRepository.save(site);
-                recursiveFunc(sites.get(i).getUrl(), site);
+                WebCrawler webCrawler = new WebCrawler(sites.get(i).getUrl(), pageRepository, siteRepository);
+                forkJoinPool.invoke(webCrawler);
                 site.setStatus(Status.INDEXED);
             }
         }catch (IndexingRunningException e){
             if (site != null) {
                 site.setStatus(Status.FAILED);
                 site.setLastError(response.getError());
+            }
+        }finally {
+            if(forkJoinPool != null) {
+                forkJoinPool.shutdown();
             }
         }
         return response;
