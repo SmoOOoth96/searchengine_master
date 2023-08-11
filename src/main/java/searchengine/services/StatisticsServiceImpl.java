@@ -17,7 +17,6 @@ import java.util.List;
 
 @Service
 public class StatisticsServiceImpl implements StatisticsService {
-
     private final PageRepository pageRepository;
     private final SiteRepository siteRepository;
     private final LemmaRepository lemmaRepository;

@@ -26,7 +26,7 @@ public class WebCrawler extends RecursiveAction {
         this.url = url;
         WebCrawler.pageRepository = pageRepository;
         WebCrawler.siteRepository = siteRepository;
-        this.site = siteRepository.findByUrl(getFullDomainName(url));
+        this.site = WebCrawler.siteRepository.findByUrl(getFullDomainName(url));
     }
 
     public WebCrawler(String url) {
@@ -46,15 +46,16 @@ public class WebCrawler extends RecursiveAction {
                 String entryUrl = s.attr("href");
                 int statusCode = document.connection().response().statusCode();
 
-                String newUrl = makeAbsUrl(entryUrl);
+                String entryAbsUrl = getAbsUrl(entryUrl);
+                String relUrl = getRelativeUrl(entryUrl);
 
-                if(isUrlValid(newUrl, entryUrl)){
-                    WebCrawler app = new WebCrawler(newUrl);
+                if(isUrlValid(entryAbsUrl, relUrl)){
+                    WebCrawler app = new WebCrawler(entryAbsUrl);
                     Page newPage = new Page();
                     newPage.setCode(statusCode);
                     newPage.setSite(this.site);
-                    newPage.setContent(document.html());
-                    newPage.setPath(entryUrl);
+                    newPage.setContent(s.ownerDocument().html());
+                    newPage.setPath(relUrl);
                     pageRepository.save(newPage);
                     app.fork();
                     appList.add(app);
@@ -66,8 +67,17 @@ public class WebCrawler extends RecursiveAction {
         appList.forEach(WebCrawler::join);
     }
 
-    //из относительной ссылки => guides/gs/circuit-breaker/ в абсолютную => https://spring.io/guides/gs/circuit-breaker/
-    private String makeAbsUrl(String url) {
+    private String getRelativeUrl(String url) {
+        if (!url.startsWith("/")) {
+            String domainName = getFullDomainName(url);
+            if (domainName.startsWith(this.site.getUrl())) {
+                return url.substring(domainName.length() - 1);
+            }
+        }
+        return url;
+    }
+
+    private String getAbsUrl(String url) {
         if(url.startsWith("/")) {
             return getFullDomainName(this.url) + url.substring(1);
         }
@@ -76,23 +86,24 @@ public class WebCrawler extends RecursiveAction {
 
     //получить из https://lenta.ru/news/2023/08/07/uuuar/ полное доменное имя https://lenta.ru/
     private String getFullDomainName(String url) {
-        Pattern fullDomainName = Pattern.compile("https://(www)?\\.\\w+\\.(com|ru|org|net|de)/");
+        Pattern fullDomainName = Pattern.compile("https://(www\\.)?\\w+\\.(com|ru|org|net|de)/");
         Matcher matcher = fullDomainName.matcher(url);
 
         return matcher.find() ? matcher.group() : url;
     }
 
     //проверка на валидность ссылки
-    private boolean isUrlValid(String newUrl, String entryUrl) {
-        return !newUrl.endsWith("pdf")
-                && !newUrl.endsWith("jpg")
-                && !newUrl.endsWith("jpeg")
-                && !newUrl.endsWith("png")
-                && !newUrl.endsWith("gif")
-                && !newUrl.endsWith("zip")
-                && !newUrl.endsWith("bmp")
-                && !newUrl.endsWith("exe")
-                && newUrl.startsWith(this.site.getUrl())
-                && !pageRepository.existsByPath(entryUrl);
+    private boolean isUrlValid(String absUrl, String relUrl) {
+        return !absUrl.endsWith("pdf")
+                && !absUrl.endsWith("jpg")
+                && !absUrl.endsWith("jpeg")
+                && !absUrl.endsWith("png")
+                && !absUrl.endsWith("gif")
+                && !absUrl.endsWith("zip")
+                && !absUrl.endsWith("bmp")
+                && !absUrl.endsWith("exe")
+                && absUrl.startsWith(this.site.getUrl())
+                && relUrl.startsWith("/")
+                && !pageRepository.existsByPath(relUrl);
     }
 }
