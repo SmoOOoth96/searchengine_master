@@ -6,7 +6,7 @@ import searchengine.model.Site;
 
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
-    void deleteAllByName(String name);
+    void deleteAllByUrl(String url);
 
     Site findByUrl(String newUrl);
 }

@@ -33,8 +33,9 @@ public class IndexingServiceImpl implements IndexingService{
         IndexingErrorResponse response = null;
         ForkJoinPool forkJoinPool = null;
         try {
-            forkJoinPool = new ForkJoinPool();
+            forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
             List<Site> sites = sitesList.getSites();
+            sites.forEach(s -> siteRepository.deleteAllByUrl(s.getUrl()));//удаляем все записи таблиц Site и Page с базы
             response = new IndexingErrorResponse();
             response.setResult(true);
             for (int i = 0; i < sites.size(); i++) {
@@ -43,7 +44,6 @@ public class IndexingServiceImpl implements IndexingService{
                 site.setDateTime(LocalDateTime.now());
                 site.setUrl(sites.get(i).getUrl());
                 site.setName(sites.get(i).getName());
-                siteRepository.deleteAllByName(sites.get(i).getName());//удаляем все записи таблиц Site и Page с базы
                 siteRepository.save(site);
                 WebCrawler webCrawler = new WebCrawler(sites.get(i).getUrl(), pageRepository, siteRepository);
                 forkJoinPool.invoke(webCrawler);

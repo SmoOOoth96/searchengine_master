@@ -36,35 +36,43 @@ public class WebCrawler extends RecursiveAction {
 
     @Override
     public void compute() {
-        List<WebCrawler> appList = new ArrayList<>();
+        List<WebCrawler> taskList = new ArrayList<>();
         try {
             Thread.sleep(150);
             Document document = Jsoup.connect(url).ignoreHttpErrors(true).get();
             Elements elements = document.select("a");
+
+            String relUrl = getRelativeUrl(url);
+
+            Page newPage = new Page();
+            newPage.setCode(document.connection().response().statusCode());
+            newPage.setSite(this.site);
+            newPage.setContent(document.outerHtml());
+            newPage.setPath(relUrl);
+
+            if (!pageRepository.existsByPath(relUrl)) {
+                pageRepository.save(newPage);
+            }
+
             for (Element s :
                     elements) {
                 String entryUrl = s.attr("href");
-                int statusCode = document.connection().response().statusCode();
-
                 String entryAbsUrl = getAbsUrl(entryUrl);
-                String relUrl = getRelativeUrl(entryUrl);
+                String entryRelUrl = getRelativeUrl(entryUrl);
 
-                if(isUrlValid(entryAbsUrl, relUrl)){
+                if (isUrlValid(entryAbsUrl, entryRelUrl)) {
                     WebCrawler app = new WebCrawler(entryAbsUrl);
-                    Page newPage = new Page();
-                    newPage.setCode(statusCode);
-                    newPage.setSite(this.site);
-                    newPage.setContent(s.ownerDocument().html());
-                    newPage.setPath(relUrl);
-                    pageRepository.save(newPage);
-                    app.fork();
-                    appList.add(app);
+                    if(!pageRepository.existsByPath(entryRelUrl)) {
+                        pageRepository.save(newPage);
+                        app.fork();
+                        taskList.add(app);
+                    }
                 }
             }
         } catch (Exception e){
             System.err.println(e);
         }
-        appList.forEach(WebCrawler::join);
+        taskList.forEach(WebCrawler::join);
     }
 
     private String getRelativeUrl(String url) {
@@ -103,6 +111,7 @@ public class WebCrawler extends RecursiveAction {
                 && !absUrl.endsWith("bmp")
                 && !absUrl.endsWith("exe")
                 && absUrl.startsWith(this.site.getUrl())
+                && !absUrl.equals("")
                 && relUrl.startsWith("/")
                 && !pageRepository.existsByPath(relUrl);
     }
