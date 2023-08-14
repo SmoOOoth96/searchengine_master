@@ -9,8 +9,7 @@ import searchengine.model.Site;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.time.LocalDateTime;
 import java.util.concurrent.RecursiveAction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -36,43 +35,41 @@ public class WebCrawler extends RecursiveAction {
 
     @Override
     public void compute() {
-        List<WebCrawler> taskList = new ArrayList<>();
         try {
             Thread.sleep(150);
             Document document = Jsoup.connect(url).ignoreHttpErrors(true).get();
-            Elements elements = document.select("a");
+            Elements elements = document.select("a[href]");
 
+            int statusCode = document.connection().response().statusCode();
             String relUrl = getRelativeUrl(url);
+            String content = document.outerHtml();
 
             Page newPage = new Page();
-            newPage.setCode(document.connection().response().statusCode());
+            newPage.setCode(statusCode);
             newPage.setSite(this.site);
-            newPage.setContent(document.outerHtml());
+            newPage.setContent(content);
             newPage.setPath(relUrl);
-
-            if (!pageRepository.existsByPath(relUrl)) {
+            if(!pageRepository.existsByPath(relUrl)) {
                 pageRepository.save(newPage);
-            }
 
-            for (Element s :
-                    elements) {
-                String entryUrl = s.attr("href");
-                String entryAbsUrl = getAbsUrl(entryUrl);
-                String entryRelUrl = getRelativeUrl(entryUrl);
+                for (Element s :
+                        elements) {
+                    String entryUrl = s.attr("abs:href");
 
-                if (isUrlValid(entryAbsUrl, entryRelUrl)) {
-                    WebCrawler app = new WebCrawler(entryAbsUrl);
-                    if(!pageRepository.existsByPath(entryRelUrl)) {
-                        pageRepository.save(newPage);
+                    String entryAbsUrl = getAbsUrl(entryUrl);
+                    String entryRelUrl = getRelativeUrl(entryUrl);
+
+                    if (isUrlValid(entryAbsUrl, entryRelUrl)) {
+                        WebCrawler app = new WebCrawler(entryAbsUrl);
                         app.fork();
-                        taskList.add(app);
+                        this.site.setDateTime(LocalDateTime.now());
+                        siteRepository.save(this.site);
                     }
                 }
             }
         } catch (Exception e){
             System.err.println(e);
         }
-        taskList.forEach(WebCrawler::join);
     }
 
     private String getRelativeUrl(String url) {

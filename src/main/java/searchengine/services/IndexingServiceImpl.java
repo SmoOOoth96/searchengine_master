@@ -48,11 +48,13 @@ public class IndexingServiceImpl implements IndexingService{
                 WebCrawler webCrawler = new WebCrawler(sites.get(i).getUrl(), pageRepository, siteRepository);
                 forkJoinPool.invoke(webCrawler);
                 site.setStatus(Status.INDEXED);
+                siteRepository.save(site);
             }
         }catch (IndexingRunningException e){
             if (site != null) {
                 site.setStatus(Status.FAILED);
                 site.setLastError(response.getError());
+                forkJoinPool.shutdown();
             }
         }finally {
             if(forkJoinPool != null) {

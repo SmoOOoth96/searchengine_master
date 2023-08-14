@@ -27,10 +27,8 @@ public class Page {
     private String path;
 
     @Column(name = "code")
-    @NotNull
     private int code;
 
     @Column(name = "content", columnDefinition = "MEDIUMTEXT")
-    @NotNull
     private String content;
 }
