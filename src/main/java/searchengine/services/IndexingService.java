@@ -1,11 +1,15 @@
 package searchengine.services;
 
-import searchengine.dto.indexing.IndexingErrorResponse;
+import searchengine.dto.indexing.IndexingResponse;
 import searchengine.model.Page;
 import searchengine.model.Site;
 
 public interface IndexingService {
-    IndexingErrorResponse startIndexing();
+    IndexingResponse startIndexing();
+
+    IndexingResponse stopIndexing();
+
+    IndexingResponse indexPage(String url);
 
     void save(Site site);
 

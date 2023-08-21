@@ -2,11 +2,9 @@ package searchengine.controllers;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.ExceptionHandler;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import searchengine.dto.indexing.IndexingErrorResponse;
+import searchengine.dto.indexing.IndexingResponse;
 import searchengine.dto.statistics.StatisticsResponse;
 import searchengine.exceptions.IndexingRunningException;
 import searchengine.exceptions.IndexingStartedException;
@@ -30,19 +28,29 @@ public class ApiController {
     }
 
     @GetMapping("/startIndexing")
-    public ResponseEntity<IndexingErrorResponse> startIndexing(){
+    public ResponseEntity<IndexingResponse> startIndexing(){
         return ResponseEntity.ok(indexingService.startIndexing());
     }
 
+    @GetMapping("/stopIndexing")
+    public ResponseEntity<IndexingResponse> stopIndexing(){
+        return ResponseEntity.ok(indexingService.stopIndexing());
+    }
+
+    @PostMapping("/indexPage")
+    public ResponseEntity<IndexingResponse> indexPage(String url){
+        return ResponseEntity.ok(indexingService.indexPage(url));
+    }
+
     @ExceptionHandler
-    private ResponseEntity<IndexingErrorResponse> handleException(IndexingRunningException e){
-        IndexingErrorResponse response = new IndexingErrorResponse(false, "Что-то пошло не так");
+    private ResponseEntity<IndexingResponse> handleException(IndexingRunningException e){
+        IndexingResponse response = new IndexingErrorResponse("Что-то пошло не так", false);
         return new ResponseEntity<>(response, HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     @ExceptionHandler
-    private ResponseEntity<IndexingErrorResponse> handleException(IndexingStartedException e){
-        IndexingErrorResponse response = new IndexingErrorResponse(false, "Индексация уже запущена");
+    private ResponseEntity<IndexingResponse> handleException(IndexingStartedException e){
+        IndexingResponse response = new IndexingErrorResponse("Индексация уже запущена", false);
         return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
     }
 }

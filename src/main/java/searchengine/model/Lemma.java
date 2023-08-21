@@ -15,11 +15,12 @@ public class Lemma {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
-    @ManyToOne(cascade = CascadeType.ALL)
+    @ManyToOne
     @JoinColumn(name = "site_id")
+    @NotNull
     private Site site;
 
-    @OneToMany(cascade = CascadeType.ALL, mappedBy = "lemma")
+    @OneToMany(mappedBy = "lemma")
     private List<Index> indexList;
 
     @Column(name = "lemma", columnDefinition = "VARCHAR(255)")

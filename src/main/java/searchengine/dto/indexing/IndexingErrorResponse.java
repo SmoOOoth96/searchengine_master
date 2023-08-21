@@ -1,14 +1,13 @@
 package searchengine.dto.indexing;
 
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
+import lombok.Getter;
 
-@Data
-@AllArgsConstructor
-@NoArgsConstructor
-public class IndexingErrorResponse {
-    private boolean result;
+@Getter
+public class IndexingErrorResponse implements IndexingResponse{
     private String error;
+    private boolean result;
+    public IndexingErrorResponse(String error, boolean result) {
+        this.error = error;
+        this.result = result;
+    }
 }

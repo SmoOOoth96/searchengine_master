@@ -17,9 +17,27 @@ spring:
 
 indexing-settings:
   sites:
-    - url: https://www.lenta.ru/
+    - url: https://lenta.ru/
       name: Лента.ру
-    - url: https://www.skillbox.ru/
+    - url: https://skillbox.ru/
       name: Skillbox
-    - url: https://www.playback.ru/
+    - url: https://playback.ru/
       name: PlayBack.Ru
+    - url: https://volochek.life/
+      name: Волочек
+    - url: https://ipfran.ru/
+      name: ИПФран.ру
+    - url: https://dimonvideo.ru/
+      name: Димонвидео.ру
+    - url: https://tretyakovgallery.ru/
+      name: Третьяков
+    - url: https://lutherancathedral.ru/
+      name: Lutheran Cathedral
+    - url: https://dombulgakova.ru/
+      name: Булгаков
+    - url: https://svetlovka.ru/
+      name: Светловка.ру
+
+crawler-settings:
+  user-agent: Chrome/59.1.3030.111 Safari/538.4
+  referrer: https://www.ya.ru/

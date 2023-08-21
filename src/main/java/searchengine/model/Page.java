@@ -15,12 +15,12 @@ public class Page {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
-    @ManyToOne(cascade = CascadeType.MERGE)
+    @ManyToOne
     @JoinColumn(name = "site_id")
     @NotNull
     private Site site;
 
-    @OneToMany(mappedBy = "page")
+    @OneToMany(cascade = CascadeType.ALL, mappedBy = "page")
     private List<Index> indexList;
 
     @Column(name = "path", columnDefinition = "TEXT NOT NULL, UNIQUE KEY pathIndex (path(256), site_id)")

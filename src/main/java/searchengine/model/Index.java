@@ -13,17 +13,17 @@ public class Index {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
-    @ManyToOne(cascade = CascadeType.ALL)
+    @ManyToOne
     @JoinColumn(name = "page_id")
     @NotNull
     private Page page;
 
-    @ManyToOne(cascade = CascadeType.ALL)
+    @ManyToOne
     @JoinColumn(name = "lemma_id")
     @NotNull
     private Lemma lemma;
 
     @Column(name = "`rank`")
     @NotNull
-    private float rank;
+    private int rank;
 }

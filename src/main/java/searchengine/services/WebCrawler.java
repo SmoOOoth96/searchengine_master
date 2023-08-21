@@ -4,28 +4,43 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import searchengine.exceptions.IndexingStartedException;
+import searchengine.model.Index;
+import searchengine.model.Lemma;
 import searchengine.model.Page;
 import searchengine.model.Site;
+import searchengine.repositories.IndexRepository;
+import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.RecursiveAction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-
 
 public class WebCrawler extends RecursiveAction {
     private final String url;
     private final Site site;
     private static PageRepository pageRepository;
     private static SiteRepository siteRepository;
+    private static LemmaRepository lemmaRepository;
+    private static IndexRepository indexRepository;
+    private static String userAgent;
+    private static String referrer;
+    private static volatile boolean indexing;
 
-    public WebCrawler(String url, PageRepository pageRepository, SiteRepository siteRepository) {
+    public WebCrawler(String url, PageRepository pageRepository, SiteRepository siteRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository) {
         this.url = url;
         WebCrawler.pageRepository = pageRepository;
         WebCrawler.siteRepository = siteRepository;
+        WebCrawler.lemmaRepository = lemmaRepository;
+        WebCrawler.indexRepository = indexRepository;
         this.site = WebCrawler.siteRepository.findByUrl(getFullDomainName(url));
+        indexing = true;
     }
 
     public WebCrawler(String url) {
@@ -34,10 +49,17 @@ public class WebCrawler extends RecursiveAction {
     }
 
     @Override
-    public void compute() {
+    public void compute() throws IndexingStartedException {
+        List<WebCrawler> taskList = new ArrayList<>();
         try {
-            Thread.sleep(150);
-            Document document = Jsoup.connect(url).ignoreHttpErrors(true).get();
+            LemmaFinder lemmaFinder = new LemmaFinder();
+            Thread.sleep(500);
+            Document document = Jsoup.connect(url)
+                    .userAgent(userAgent)
+                    .referrer(referrer)
+                    .timeout(10000)
+                    .get();
+
             Elements elements = document.select("a[href]");
 
             int statusCode = document.connection().response().statusCode();
@@ -49,30 +71,56 @@ public class WebCrawler extends RecursiveAction {
             newPage.setSite(this.site);
             newPage.setContent(content);
             newPage.setPath(relUrl);
+
             if(!pageRepository.existsByPath(relUrl)) {
                 pageRepository.save(newPage);
 
+                Map<String, Integer> lemmaList = lemmaFinder.getAllLemmas(content);
+                for (Map.Entry<String, Integer> s :
+                        lemmaList.entrySet()) {
+                    String lemmaWord = s.getKey();
+                    int newFrequency = s.getValue();
+
+                    Lemma newLemma = new Lemma();
+                    newLemma.setSite(this.site);
+                    newLemma.setLemma(lemmaWord);
+                    newLemma.setFrequency(newFrequency);
+
+                    Index newIndex = new Index();
+                    newIndex.setPage(newPage);
+                    newIndex.setLemma(newLemma);
+                    newIndex.setRank(newFrequency);
+                    lemmaRepository.save(newLemma);
+                    indexRepository.save(newIndex);
+                }
+
                 for (Element s :
                         elements) {
-                    String entryUrl = s.attr("abs:href");
+                    String entryUrl = s.attr("href");
 
                     String entryAbsUrl = getAbsUrl(entryUrl);
                     String entryRelUrl = getRelativeUrl(entryUrl);
 
                     if (isUrlValid(entryAbsUrl, entryRelUrl)) {
-                        WebCrawler app = new WebCrawler(entryAbsUrl);
-                        app.fork();
+                        if(!indexing){
+                            taskList.clear();
+                            break;
+                        }
+                        WebCrawler task = new WebCrawler(entryAbsUrl);
+                        taskList.add(task);
+                        task.fork();
                         this.site.setDateTime(LocalDateTime.now());
                         siteRepository.save(this.site);
                     }
                 }
             }
-        } catch (Exception e){
-            System.err.println(e);
+            taskList.forEach(WebCrawler::join);
+        }catch (Exception e){
+            e.printStackTrace();
         }
     }
 
-    private String getRelativeUrl(String url) {
+    public String getRelativeUrl(String url) {
         if (!url.startsWith("/")) {
             String domainName = getFullDomainName(url);
             if (domainName.startsWith(this.site.getUrl())) {
@@ -90,8 +138,8 @@ public class WebCrawler extends RecursiveAction {
     }
 
     //получить из https://lenta.ru/news/2023/08/07/uuuar/ полное доменное имя https://lenta.ru/
-    private String getFullDomainName(String url) {
-        Pattern fullDomainName = Pattern.compile("https://(www\\.)?\\w+\\.(com|ru|org|net|de)/");
+    public String getFullDomainName(String url) {
+        Pattern fullDomainName = Pattern.compile("https://(www\\.)?\\w+\\.[a-z]+/");
         Matcher matcher = fullDomainName.matcher(url);
 
         return matcher.find() ? matcher.group() : url;
@@ -111,5 +159,21 @@ public class WebCrawler extends RecursiveAction {
                 && !absUrl.equals("")
                 && relUrl.startsWith("/")
                 && !pageRepository.existsByPath(relUrl);
+    }
+
+    public static void setUserAgent(String userAgent) {
+        WebCrawler.userAgent = userAgent;
+    }
+
+    public static void setReferrer(String referrer) {
+        WebCrawler.referrer = referrer;
+    }
+
+    public static boolean isIndexing() {
+        return indexing;
+    }
+
+    public static void setIndexing(boolean indexing) {
+        WebCrawler.indexing = indexing;
     }
 }
