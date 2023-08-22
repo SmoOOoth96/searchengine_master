@@ -2,11 +2,13 @@ package searchengine.repositories;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 import searchengine.model.Site;
 
 @Repository
 public interface SiteRepository extends JpaRepository<Site, Integer> {
-    void deleteAllByUrl(String url);
-
+    @Transactional
+    void deleteByUrl(String url);
     Site findByUrl(String newUrl);
+    boolean existsByUrl(String url);
 }

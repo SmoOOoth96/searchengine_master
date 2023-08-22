@@ -2,8 +2,9 @@ package searchengine.services;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import searchengine.config.SitesList;
 import searchengine.config.CrawlerConfig;
 import searchengine.dto.indexing.IndexingErrorResponse;
@@ -44,9 +45,11 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     @Override
-    public IndexingResponse startIndexing() {
+    public ResponseEntity<IndexingResponse> startIndexing() {
+        IndexingResponse response = null;
         if(WebCrawler.isIndexing()){
-            return new IndexingErrorResponse("Индексация уже запущена", false);
+            response = new IndexingErrorResponse("Индексация уже запущена", false);
+            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }else{
             Thread thread = new Thread(){
                 @Override
@@ -55,28 +58,34 @@ public class IndexingServiceImpl implements IndexingService {
                 }
             };
             thread.start();
-            return new IndexingSuccessResponse(true);
+            response = new IndexingSuccessResponse(true);
+            return new ResponseEntity<>(response, HttpStatus.OK);
         }
     }
 
     @Override
-    public IndexingResponse stopIndexing() {
+    public ResponseEntity<IndexingResponse> stopIndexing() {
+        IndexingResponse response = null;
         if(WebCrawler.isIndexing()){
             stop();
-            return new IndexingSuccessResponse(true);
+            response = new IndexingSuccessResponse(true);
+            return new ResponseEntity<>(response, HttpStatus.OK);
         }else{
-            return new IndexingErrorResponse("Индексация не запущена", false);
+            response = new IndexingErrorResponse("Индексация не запущена", false);
+            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }
     }
 
     @Override
-    public IndexingResponse indexPage(String entryUrl) {
+    public ResponseEntity<IndexingResponse> indexPage(String entryUrl) {
         String domainName = getFullDomainName(entryUrl);
         Site site = siteRepository.findByUrl(domainName);
+        IndexingResponse response = null;
         if(site == null){
-            return new IndexingErrorResponse(
+            response = new IndexingErrorResponse(
                     "Данная страница находится за пределами сайтов, указанных в конфигурационном файле",
                     false);
+            return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }
         Thread thread = new Thread(){
             @Override
@@ -85,7 +94,8 @@ public class IndexingServiceImpl implements IndexingService {
             }
         };
         thread.start();
-        return new IndexingSuccessResponse(true);
+        response = new IndexingSuccessResponse(true);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     private void start(){
@@ -93,7 +103,12 @@ public class IndexingServiceImpl implements IndexingService {
         try {
             forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
             List<Site> sites = sitesList.getSites();
-            sites.forEach(s -> siteRepository.deleteAllByUrl(s.getUrl()));//удаляем все записи таблиц Site и Page с базы
+            for (int i = 0; i < sites.size(); i++) {
+                String siteUrl = sites.get(i).getUrl();
+                if(siteRepository.existsByUrl(siteUrl)){
+                    siteRepository.deleteByUrl(siteUrl);
+                }
+            }//удаляем все записи таблиц Site и Page с базы
 
             for (int i = 0; i < sites.size(); i++) {
                 site = new Site();
@@ -119,6 +134,8 @@ public class IndexingServiceImpl implements IndexingService {
                 siteRepository.save(site);
                 forkJoinPool.shutdown();
             }
+        }catch (Exception e){
+            e.printStackTrace();
         } finally {
             if (forkJoinPool != null) {
                 forkJoinPool.shutdown();
@@ -208,33 +225,6 @@ public class IndexingServiceImpl implements IndexingService {
         }
         site.setDateTime(LocalDateTime.now());
         siteRepository.save(site);
-    }
-
-
-    @Transactional
-    @Override
-    public void save(Site site) {
-        siteRepository.save(site);
-    }
-
-    @Transactional
-    @Override
-    public void update(int id, Site updatedSite) {
-        updatedSite.setId(id);
-        siteRepository.save(updatedSite);
-    }
-
-    @Transactional
-    @Override
-    public void save(Page page) {
-        pageRepository.save(page);
-    }
-
-    @Transactional
-    @Override
-    public void update(int id, Page updatedPage) {
-        updatedPage.setId(id);
-        pageRepository.save(updatedPage);
     }
 
     private String getRelativeUrl(String url) {

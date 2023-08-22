@@ -20,7 +20,7 @@ public class Lemma {
     @NotNull
     private Site site;
 
-    @OneToMany(mappedBy = "lemma")
+    @OneToMany(mappedBy = "lemma", cascade = CascadeType.ALL)
     private List<Index> indexList;
 
     @Column(name = "lemma", columnDefinition = "VARCHAR(255)")
