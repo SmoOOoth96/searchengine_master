@@ -10,7 +10,7 @@ import searchengine.config.CrawlerConfig;
 import searchengine.dto.indexing.IndexingErrorResponse;
 import searchengine.dto.indexing.IndexingResponse;
 import searchengine.dto.indexing.IndexingSuccessResponse;
-import searchengine.exceptions.IndexingRunningException;
+import searchengine.exceptions.IndexingStoppedException;
 import searchengine.model.*;
 import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
@@ -122,12 +122,12 @@ public class IndexingServiceImpl implements IndexingService {
                 WebCrawler.setReferrer(crawlerConfig.getReferrer());
                 forkJoinPool.invoke(rootTask);
                 if (!WebCrawler.isIndexing()) {
-                    throw new IndexingRunningException();
+                    throw new IndexingStoppedException();
                 }
                 site.setStatus(Status.INDEXED);
                 siteRepository.save(site);
             }
-        } catch (IndexingRunningException e) {
+        } catch (IndexingStoppedException e) {
             if (site != null) {
                 site.setStatus(Status.FAILED);
                 site.setLastError("Индексация остановлена пользователем");
@@ -194,6 +194,10 @@ public class IndexingServiceImpl implements IndexingService {
         String relUrl = getRelativeUrl(entryUrl);
         String content = document.outerHtml();
 
+        if(String.valueOf(statusCode).charAt(0) == '4' || String.valueOf(statusCode).charAt(0) == '5'){
+            return;
+        }
+
         Page newPage = new Page();
         newPage.setCode(statusCode);
         newPage.setSite(site);
@@ -214,12 +218,18 @@ public class IndexingServiceImpl implements IndexingService {
             int frequency = s.getValue();
             newLemma.setSite(site);
             newLemma.setLemma(lemma);
-            newLemma.setFrequency(frequency);
+            newLemma.setFrequency(1);
 
             Index newIndex = new Index();
             newIndex.setPage(newPage);
             newIndex.setLemma(newLemma);
             newIndex.setRank(frequency);
+
+            //Lemma foundLemma = lemmaRepository.findByLemmaAndSite(lemma, site);
+//            if(foundLemma != null){
+//                int foundLemmaFrequency = foundLemma.getFrequency();
+//                newLemma.setFrequency(foundLemmaFrequency + 1);
+//            }
             lemmaRepository.save(newLemma);
             indexRepository.save(newIndex);
         }

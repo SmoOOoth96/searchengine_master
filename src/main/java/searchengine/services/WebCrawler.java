@@ -4,7 +4,6 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
-import searchengine.exceptions.IndexingStartedException;
 import searchengine.model.Index;
 import searchengine.model.Lemma;
 import searchengine.model.Page;
@@ -49,7 +48,7 @@ public class WebCrawler extends RecursiveAction {
     }
 
     @Override
-    public void compute() throws IndexingStartedException {
+    public void compute() {
         List<WebCrawler> taskList = new ArrayList<>();
         try {
             LemmaFinder lemmaFinder = new LemmaFinder();
@@ -72,25 +71,38 @@ public class WebCrawler extends RecursiveAction {
             newPage.setContent(content);
             newPage.setPath(relUrl);
 
-            if(!pageRepository.existsByPath(relUrl)) {
+            if(!pageRepository.existsByPath(relUrl)
+                    && String.valueOf(statusCode).charAt(0) != '4'
+                    && String.valueOf(statusCode).charAt(0) != '5') {
                 pageRepository.save(newPage);
 
                 Map<String, Integer> lemmaList = lemmaFinder.getAllLemmas(content);
                 for (Map.Entry<String, Integer> s :
                         lemmaList.entrySet()) {
                     String lemmaWord = s.getKey();
-                    int newFrequency = s.getValue();
+                    int rank = s.getValue();
 
                     Lemma newLemma = new Lemma();
                     newLemma.setSite(this.site);
                     newLemma.setLemma(lemmaWord);
-                    newLemma.setFrequency(newFrequency);
+                    newLemma.setFrequency(1);
 
                     Index newIndex = new Index();
                     newIndex.setPage(newPage);
                     newIndex.setLemma(newLemma);
-                    newIndex.setRank(newFrequency);
-                    lemmaRepository.save(newLemma);
+                    newIndex.setRank(rank);
+                    List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, this.site);
+                    if(!foundLemmaList.isEmpty()){
+                        int foundFrequencySum = 0;
+                        for (Lemma foundLemma : foundLemmaList) {
+                            foundFrequencySum += foundLemma.getFrequency();
+                            lemmaRepository.delete(foundLemma);
+                        }
+                        newLemma.setFrequency(foundFrequencySum + 1);
+                        lemmaRepository.save(newLemma);
+                    }else {
+                        lemmaRepository.save(newLemma);
+                    }
                     indexRepository.save(newIndex);
                 }
 
