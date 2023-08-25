@@ -9,5 +9,5 @@ import java.util.List;
 
 @Repository
 public interface LemmaRepository extends JpaRepository<Lemma, Integer> {
-    List<Lemma> findByLemmaAndSite(String lemmaWord, Site site);
+    Lemma findOneByLemmaAndSite(String lemmaWord, Site site);
 }

@@ -38,13 +38,13 @@ public class WebCrawler extends RecursiveAction {
         WebCrawler.siteRepository = siteRepository;
         WebCrawler.lemmaRepository = lemmaRepository;
         WebCrawler.indexRepository = indexRepository;
-        this.site = WebCrawler.siteRepository.findByUrl(getFullDomainName(url));
+        this.site = WebCrawler.siteRepository.findOneByUrl(getFullDomainName(url));
         indexing = true;
     }
 
     public WebCrawler(String url) {
         this.url = url;
-        this.site = siteRepository.findByUrl(getFullDomainName(url));
+        this.site = siteRepository.findOneByUrl(getFullDomainName(url));
     }
 
     @Override
@@ -91,19 +91,19 @@ public class WebCrawler extends RecursiveAction {
                     newIndex.setPage(newPage);
                     newIndex.setLemma(newLemma);
                     newIndex.setRank(rank);
-                    List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, this.site);
-                    if(!foundLemmaList.isEmpty()){
-                        int foundFrequencySum = 0;
-                        for (Lemma foundLemma : foundLemmaList) {
-                            foundFrequencySum += foundLemma.getFrequency();
-                            lemmaRepository.delete(foundLemma);
-                        }
-                        newLemma.setFrequency(foundFrequencySum + 1);
+
+
+                    Lemma foundLemma = lemmaRepository.findOneByLemmaAndSite(lemmaWord, this.site);
+                    if(foundLemma != null){
+                        int foundLemmaFrequency = foundLemma.getFrequency();
+                        foundLemma.setFrequency(foundLemmaFrequency + 1);
+                        newIndex.setLemma(foundLemma);
+                        lemmaRepository.save(foundLemma);
+                        indexRepository.save(newIndex);
+                    }else{
                         lemmaRepository.save(newLemma);
-                    }else {
-                        lemmaRepository.save(newLemma);
+                        indexRepository.save(newIndex);
                     }
-                    indexRepository.save(newIndex);
                 }
 
                 for (Element s :

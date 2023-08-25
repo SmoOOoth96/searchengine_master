@@ -48,7 +48,7 @@ public class LemmaFinder {
     }
 
     private String[] getRussianWords(String text){
-        return text.toLowerCase().replaceAll("<[^>]*>", "").replaceAll("[^а-яё]+", " ").trim().split("\\s");
+        return text.toLowerCase().replaceAll("<[^>]*>", " ").replaceAll("[^а-яё]+", " ").trim().split("\\s");
     }
 
     private boolean checkParticle(List<String> wordsMorphInfo){

@@ -79,7 +79,7 @@ public class IndexingServiceImpl implements IndexingService {
     @Override
     public ResponseEntity<IndexingResponse> indexPage(String entryUrl) {
         String domainName = getFullDomainName(entryUrl);
-        Site site = siteRepository.findByUrl(domainName);
+        Site site = siteRepository.findOneByUrl(domainName);
         IndexingResponse response = null;
         if(site == null){
             response = new IndexingErrorResponse(
@@ -154,7 +154,7 @@ public class IndexingServiceImpl implements IndexingService {
         }
         for (int i = 0; i < allSites.size(); i++) {
             Site site = allSites.get(i);
-            Site foundSite = siteRepository.findByUrl(site.getUrl());
+            Site foundSite = siteRepository.findOneByUrl(site.getUrl());
             if (foundSite != null && foundSite.getStatus() != Status.INDEXED && foundSite.getStatus() != Status.FAILED) {
                 foundSite.setStatus(Status.FAILED);
                 foundSite.setDateTime(LocalDateTime.now());
@@ -190,7 +190,7 @@ public class IndexingServiceImpl implements IndexingService {
 
         int statusCode = document.connection().response().statusCode();
         String domainName = getFullDomainName(entryUrl);
-        Site site = siteRepository.findByUrl(domainName);
+        Site site = siteRepository.findOneByUrl(domainName);
         String relUrl = getRelativeUrl(entryUrl);
         String content = document.outerHtml();
 
@@ -204,7 +204,7 @@ public class IndexingServiceImpl implements IndexingService {
         newPage.setContent(content);
         newPage.setPath(relUrl);
         if (pageRepository.existsByPath(relUrl)) {
-            Page existPage = pageRepository.findByPath(relUrl);
+            Page existPage = pageRepository.findOneByPath(relUrl);
             pageRepository.delete(existPage);
             pageRepository.save(newPage);
         }else{
@@ -225,13 +225,17 @@ public class IndexingServiceImpl implements IndexingService {
             newIndex.setLemma(newLemma);
             newIndex.setRank(frequency);
 
-            //Lemma foundLemma = lemmaRepository.findByLemmaAndSite(lemma, site);
-//            if(foundLemma != null){
-//                int foundLemmaFrequency = foundLemma.getFrequency();
-//                newLemma.setFrequency(foundLemmaFrequency + 1);
-//            }
-            lemmaRepository.save(newLemma);
-            indexRepository.save(newIndex);
+            Lemma foundLemma = lemmaRepository.findOneByLemmaAndSite(lemma, site);
+            if(foundLemma != null){
+                int foundLemmaFrequency = foundLemma.getFrequency();
+                foundLemma.setFrequency(foundLemmaFrequency + 1);
+                newIndex.setLemma(foundLemma);
+                lemmaRepository.save(foundLemma);
+                indexRepository.save(newIndex);
+            }else{
+                lemmaRepository.save(newLemma);
+                indexRepository.save(newIndex);
+            }
         }
         site.setDateTime(LocalDateTime.now());
         siteRepository.save(site);

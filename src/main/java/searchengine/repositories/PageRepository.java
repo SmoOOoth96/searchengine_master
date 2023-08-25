@@ -7,5 +7,5 @@ import searchengine.model.Page;
 @Repository
 public interface PageRepository extends JpaRepository<Page, Integer> {
     boolean existsByPath(String path);
-    Page findByPath(String path);
+    Page findOneByPath(String path);
 }
