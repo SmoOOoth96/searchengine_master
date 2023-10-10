@@ -1,5 +1,6 @@
 package searchengine.services;
 
+import lombok.extern.log4j.Log4j2;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.springframework.http.HttpStatus;
@@ -26,8 +27,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
+@Log4j2
 public class IndexingServiceImpl implements IndexingService {
-    private final SitesList sitesList;
+    private final SitesList sites;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
     private final LemmaRepository lemmaRepository;
@@ -35,8 +37,8 @@ public class IndexingServiceImpl implements IndexingService {
     private final CrawlerConfig crawlerConfig;
     private ForkJoinPool forkJoinPool;
 
-    public IndexingServiceImpl(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository, CrawlerConfig crawlerConfig) {
-        this.sitesList = sitesList;
+    public IndexingServiceImpl(SitesList sites, SiteRepository siteRepository, PageRepository pageRepository, LemmaRepository lemmaRepository, IndexRepository indexRepository, CrawlerConfig crawlerConfig) {
+        this.sites = sites;
         this.siteRepository = siteRepository;
         this.pageRepository = pageRepository;
         this.lemmaRepository = lemmaRepository;
@@ -79,7 +81,7 @@ public class IndexingServiceImpl implements IndexingService {
     @Override
     public ResponseEntity<IndexingResponse> indexPage(String entryUrl) {
         String domainName = getFullDomainName(entryUrl);
-        Site site = siteRepository.findOneByUrl(domainName);
+        Site site = siteRepository.findByUrl(domainName);
         IndexingResponse response = null;
         if(site == null){
             response = new IndexingErrorResponse(
@@ -102,32 +104,48 @@ public class IndexingServiceImpl implements IndexingService {
         Site site = null;
         try {
             forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
-            List<Site> sites = sitesList.getSites();
-            for (int i = 0; i < sites.size(); i++) {
-                String siteUrl = sites.get(i).getUrl();
-                if(siteRepository.existsByUrl(siteUrl)){
-                    siteRepository.deleteByUrl(siteUrl);
-                }
-            }//удаляем все записи таблиц Site и Page с базы
+            List<Site> siteList = this.sites.getSites();
 
-            for (int i = 0; i < sites.size(); i++) {
+            for (Site value : siteList) {
+                String foundSiteUrl = value.getUrl();
+                if (siteRepository.existsByUrl(foundSiteUrl)) {
+                    siteRepository.deleteByUrl(foundSiteUrl);
+                }
+                long start = System.currentTimeMillis();
+
+                Status status = Status.INDEXING;
+                LocalDateTime time = LocalDateTime.now();
+                String siteUrl = value.getUrl();
+                String name = value.getName();
+
                 site = new Site();
-                site.setStatus(Status.INDEXING);
-                site.setDateTime(LocalDateTime.now());
-                site.setUrl(sites.get(i).getUrl());
-                site.setName(sites.get(i).getName());
+                site.setStatus(status);
+                site.setDateTime(time);
+                site.setUrl(siteUrl);
+                site.setName(name);
+
                 siteRepository.save(site);
-                WebCrawler rootTask = new WebCrawler(sites.get(i).getUrl(), pageRepository, siteRepository, lemmaRepository, indexRepository);
+
+                WebCrawler rootTask = new WebCrawler(siteUrl, pageRepository, siteRepository, lemmaRepository, indexRepository);
                 WebCrawler.setUserAgent(crawlerConfig.getUserAgent());
                 WebCrawler.setReferrer(crawlerConfig.getReferrer());
                 forkJoinPool.invoke(rootTask);
+
                 if (!WebCrawler.isIndexing()) {
                     throw new IndexingStoppedException();
                 }
+
                 site.setStatus(Status.INDEXED);
                 siteRepository.save(site);
+
+                long end = System.currentTimeMillis();
+                long result = end - start;
+                log.error("hours: " + result / 1000 / 60 / 60);
+                log.error("minutes: " + result / 1000 / 60);
+                log.error("seconds: " + result / 1000);
             }
         } catch (IndexingStoppedException e) {
+            log.error("error", e);
             if (site != null) {
                 site.setStatus(Status.FAILED);
                 site.setLastError("Индексация остановлена пользователем");
@@ -135,7 +153,7 @@ public class IndexingServiceImpl implements IndexingService {
                 forkJoinPool.shutdown();
             }
         }catch (Exception e){
-            e.printStackTrace();
+            log.error("error", e);
         } finally {
             if (forkJoinPool != null) {
                 forkJoinPool.shutdown();
@@ -146,29 +164,20 @@ public class IndexingServiceImpl implements IndexingService {
     private void stop(){
         forkJoinPool.shutdownNow();
         WebCrawler.setIndexing(false);
-        List<Site> allSites = sitesList.getSites();
+        List<Site> siteList = sites.getSites();
+
         try {
             Thread.sleep(60);
         } catch (InterruptedException e) {
-            throw new RuntimeException(e);
+            log.error("error", e);
         }
-        for (int i = 0; i < allSites.size(); i++) {
-            Site site = allSites.get(i);
-            Site foundSite = siteRepository.findOneByUrl(site.getUrl());
-            if (foundSite != null && foundSite.getStatus() != Status.INDEXED && foundSite.getStatus() != Status.FAILED) {
-                foundSite.setStatus(Status.FAILED);
-                foundSite.setDateTime(LocalDateTime.now());
-                foundSite.setUrl(site.getUrl());
-                foundSite.setName(site.getName());
-                foundSite.setLastError("Индексация остановлена пользователем");
-                siteRepository.save(foundSite);
+
+        for (Site site : siteList) {
+            Site foundSite = siteRepository.findByUrl(site.getUrl());
+            if (foundSite != null && foundSite.getStatus() != Status.INDEXED) {
+                setValues(foundSite);
             } else {
-                site.setStatus(Status.FAILED);
-                site.setDateTime(LocalDateTime.now());
-                site.setUrl(site.getUrl());
-                site.setName(site.getName());
-                site.setLastError("Индексация остановлена пользователем");
-                siteRepository.save(site);
+                setValues(site);
             }
         }
     }
@@ -178,67 +187,104 @@ public class IndexingServiceImpl implements IndexingService {
         LemmaFinder lemmaFinder = null;
         try {
             lemmaFinder = new LemmaFinder();
-            Thread.sleep(500);
+            Thread.sleep(125);
             document = Jsoup.connect(entryUrl)
                     .userAgent(crawlerConfig.getUserAgent())
                     .referrer(crawlerConfig.getReferrer())
                     .timeout(10000)
                     .get();
         } catch (InterruptedException | IOException e) {
-            throw new RuntimeException(e);
+            log.error("error", e);
         }
 
-        int statusCode = document.connection().response().statusCode();
-        String domainName = getFullDomainName(entryUrl);
-        Site site = siteRepository.findOneByUrl(domainName);
-        String relUrl = getRelativeUrl(entryUrl);
-        String content = document.outerHtml();
-
-        if(String.valueOf(statusCode).charAt(0) == '4' || String.valueOf(statusCode).charAt(0) == '5'){
-            return;
-        }
-
-        Page newPage = new Page();
-        newPage.setCode(statusCode);
-        newPage.setSite(site);
-        newPage.setContent(content);
-        newPage.setPath(relUrl);
-        if (pageRepository.existsByPath(relUrl)) {
-            Page existPage = pageRepository.findOneByPath(relUrl);
-            pageRepository.delete(existPage);
-            pageRepository.save(newPage);
-        }else{
-            pageRepository.save(newPage);
-        }
-        Map<String, Integer> lemmaList = lemmaFinder.getAllLemmas(content);
-        for (Map.Entry<String, Integer> s :
-                lemmaList.entrySet()) {
-            Lemma newLemma = new Lemma();
-            String lemma = s.getKey();
-            int frequency = s.getValue();
-            newLemma.setSite(site);
-            newLemma.setLemma(lemma);
-            newLemma.setFrequency(1);
-
-            Index newIndex = new Index();
-            newIndex.setPage(newPage);
-            newIndex.setLemma(newLemma);
-            newIndex.setRank(frequency);
-
-            Lemma foundLemma = lemmaRepository.findOneByLemmaAndSite(lemma, site);
-            if(foundLemma != null){
-                int foundLemmaFrequency = foundLemma.getFrequency();
-                foundLemma.setFrequency(foundLemmaFrequency + 1);
-                newIndex.setLemma(foundLemma);
-                lemmaRepository.save(foundLemma);
-                indexRepository.save(newIndex);
-            }else{
-                lemmaRepository.save(newLemma);
-                indexRepository.save(newIndex);
+        try {
+            if(document == null){
+                return;
             }
+            int statusCode = document.connection().response().statusCode();
+            String domainName = getFullDomainName(entryUrl);
+            Site site = siteRepository.findByUrl(domainName);
+            String relUrl = getRelativeUrl(entryUrl);
+            String content = document.outerHtml();
+
+            if(String.valueOf(statusCode).charAt(0) == '4' || String.valueOf(statusCode).charAt(0) == '5'){
+                return;
+            }
+
+            Page newPage = new Page();
+            newPage.setCode(statusCode);
+            newPage.setSite(site);
+            newPage.setContent(content);
+            newPage.setPath(relUrl);
+
+            Page foundPage = pageRepository.findByPath(relUrl);
+
+            if (foundPage != null) {
+                updateExistingPage(foundPage, statusCode, site, content, relUrl);
+                newPage = foundPage;
+            }else{
+                pageRepository.save(newPage);
+            }
+
+            Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
+            for (Map.Entry<String, Integer> s :
+                    lemmaList.entrySet()) {
+                String lemma = s.getKey();
+                int rank = s.getValue();
+
+                Lemma newLemma = new Lemma();
+                newLemma.setSite(site);
+                newLemma.setLemma(lemma);
+                newLemma.setFrequency(1);
+
+                Index newIndex = new Index();
+                newIndex.setPage(newPage);
+                newIndex.setLemma(newLemma);
+                newIndex.setRank(rank);
+
+                List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemma, site);
+
+                if (!foundLemmaList.isEmpty()) {
+                    updateExistingLemmas(foundLemmaList, newIndex);
+                } else {
+                    lemmaRepository.save(newLemma);
+                    indexRepository.save(newIndex);
+                }
+            }
+            site.setDateTime(LocalDateTime.now());
+            siteRepository.save(site);
+        } catch (Exception e) {
+            log.error("error", e);
         }
+    }
+
+    private void setValues(Site site) {
+        site.setStatus(Status.FAILED);
         site.setDateTime(LocalDateTime.now());
+        site.setUrl(site.getUrl());
+        site.setName(site.getName());
+        site.setLastError("Индексация остановлена пользователем");
         siteRepository.save(site);
+    }
+
+    private void updateExistingLemmas(List<Lemma> lemmaList, Index newIndex) {
+        for (Lemma foundLemma : lemmaList) {
+            int foundLemmaFrequency = foundLemma.getFrequency();
+            foundLemma.setFrequency(foundLemmaFrequency + 1);
+
+            newIndex.setLemma(foundLemma);
+
+            lemmaRepository.save(foundLemma);
+            indexRepository.save(newIndex);
+        }
+    }
+
+    private void updateExistingPage(Page foundPage, int statusCode, Site site, String content, String relUrl) {
+        foundPage.setCode(statusCode);
+        foundPage.setSite(site);
+        foundPage.setContent(content);
+        foundPage.setPath(relUrl);
+        pageRepository.save(foundPage);
     }
 
     private String getRelativeUrl(String url) {

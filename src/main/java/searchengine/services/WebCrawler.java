@@ -1,5 +1,6 @@
 package searchengine.services;
 
+import lombok.extern.log4j.Log4j2;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -21,6 +22,7 @@ import java.util.concurrent.RecursiveAction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+@Log4j2
 public class WebCrawler extends RecursiveAction {
     private final String url;
     private final Site site;
@@ -38,13 +40,13 @@ public class WebCrawler extends RecursiveAction {
         WebCrawler.siteRepository = siteRepository;
         WebCrawler.lemmaRepository = lemmaRepository;
         WebCrawler.indexRepository = indexRepository;
-        this.site = WebCrawler.siteRepository.findOneByUrl(getFullDomainName(url));
+        this.site = WebCrawler.siteRepository.findByUrl(getFullDomainName(url));
         indexing = true;
     }
 
     public WebCrawler(String url) {
         this.url = url;
-        this.site = siteRepository.findOneByUrl(getFullDomainName(url));
+        this.site = siteRepository.findByUrl(getFullDomainName(url));
     }
 
     @Override
@@ -71,12 +73,12 @@ public class WebCrawler extends RecursiveAction {
             newPage.setContent(content);
             newPage.setPath(relUrl);
 
-            if(!pageRepository.existsByPath(relUrl)
+            if(!pageRepository.existsByPathAndSite(relUrl, this.site)
                     && String.valueOf(statusCode).charAt(0) != '4'
                     && String.valueOf(statusCode).charAt(0) != '5') {
                 pageRepository.save(newPage);
 
-                Map<String, Integer> lemmaList = lemmaFinder.getAllLemmas(content);
+                Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
                 for (Map.Entry<String, Integer> s :
                         lemmaList.entrySet()) {
                     String lemmaWord = s.getKey();
@@ -92,14 +94,14 @@ public class WebCrawler extends RecursiveAction {
                     newIndex.setLemma(newLemma);
                     newIndex.setRank(rank);
 
-
-                    Lemma foundLemma = lemmaRepository.findOneByLemmaAndSite(lemmaWord, this.site);
-                    if(foundLemma != null){
-                        int foundLemmaFrequency = foundLemma.getFrequency();
-                        foundLemma.setFrequency(foundLemmaFrequency + 1);
-                        newIndex.setLemma(foundLemma);
-                        lemmaRepository.save(foundLemma);
-                        indexRepository.save(newIndex);
+                    List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, this.site);
+                    if(!foundLemmaList.isEmpty()){
+                        for (Lemma foundLemma : foundLemmaList) {
+                            foundLemma.setFrequency(foundLemma.getFrequency() + 1);
+                            newIndex.setLemma(foundLemma);
+                            lemmaRepository.save(foundLemma);
+                            indexRepository.save(newIndex);
+                        }
                     }else{
                         lemmaRepository.save(newLemma);
                         indexRepository.save(newIndex);
@@ -128,7 +130,7 @@ public class WebCrawler extends RecursiveAction {
             }
             taskList.forEach(WebCrawler::join);
         }catch (Exception e){
-            e.printStackTrace();
+            log.error("error", e);
         }
     }
 
@@ -170,7 +172,7 @@ public class WebCrawler extends RecursiveAction {
                 && absUrl.startsWith(this.site.getUrl())
                 && !absUrl.equals("")
                 && relUrl.startsWith("/")
-                && !pageRepository.existsByPath(relUrl);
+                && !pageRepository.existsByPathAndSite(relUrl, this.site);
     }
 
     public static void setUserAgent(String userAgent) {

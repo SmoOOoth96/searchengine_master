@@ -9,6 +9,6 @@ import searchengine.model.Site;
 public interface SiteRepository extends JpaRepository<Site, Integer> {
     @Transactional
     void deleteByUrl(String url);
-    Site findOneByUrl(String newUrl);
+    Site findByUrl(String newUrl);
     boolean existsByUrl(String url);
 }

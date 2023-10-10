@@ -6,12 +6,14 @@ spring:
     username: root
     password: 1324fara
     url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true
+    hikari:
+      maxLifeTime: 300000
   jpa:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     show-sql: true
 # example values
 
@@ -41,3 +43,9 @@ indexing-settings:
 crawler-settings:
   user-agent: Chrome/59.1.3030.111 Safari/538.4
   referrer: https://www.ya.ru/
+
+logging:
+  level:
+    org.springframework.web: error
+    org.hibernate: error
+  file.name: logs/app.log
