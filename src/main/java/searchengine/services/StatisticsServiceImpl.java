@@ -10,6 +10,7 @@ import searchengine.model.Site;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+import searchengine.utils.WebCrawler;
 
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -42,7 +43,7 @@ public class StatisticsServiceImpl implements StatisticsService {
                 String url = site.getUrl();
                 String name = site.getName();
                 String status = site.getStatus().name();
-                long time = site.getDateTime().atZone(ZoneId.of("Asia/Karachi")).toInstant().toEpochMilli();
+                long time = site.getDateTime().atZone(ZoneId.of("Europe/Paris")).toInstant().toEpochMilli();
                 String error = site.getLastError();
                 int pages = pageRepository.countBySite(site);
                 int lemmas = lemmaRepository.countBySite(site);

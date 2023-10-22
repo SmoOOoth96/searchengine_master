@@ -1,4 +1,4 @@
-package searchengine.services;
+package searchengine.utils;
 
 import lombok.extern.log4j.Log4j2;
 import org.jsoup.Jsoup;
@@ -14,6 +14,7 @@ import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,85 +54,122 @@ public class WebCrawler extends RecursiveAction {
     public void compute() {
         List<WebCrawler> taskList = new ArrayList<>();
         try {
-            LemmaFinder lemmaFinder = new LemmaFinder();
-            Thread.sleep(500);
+            Thread.sleep(150);
             Document document = Jsoup.connect(url)
                     .userAgent(userAgent)
                     .referrer(referrer)
                     .timeout(10000)
                     .get();
 
-            Elements elements = document.select("a[href]");
-
             int statusCode = document.connection().response().statusCode();
             String relUrl = getRelativeUrl(url);
             String content = document.outerHtml();
 
-            Page newPage = new Page();
-            newPage.setCode(statusCode);
-            newPage.setSite(this.site);
-            newPage.setContent(content);
-            newPage.setPath(relUrl);
+            Page newPage = initNewPage(statusCode, this.site, content, relUrl);
 
-            if(!pageRepository.existsByPathAndSite(relUrl, this.site)
-                    && String.valueOf(statusCode).charAt(0) != '4'
-                    && String.valueOf(statusCode).charAt(0) != '5') {
+            boolean pageExists = !pageRepository.existsByPathAndSite(relUrl, this.site);
+
+            if(pageExists && hasErrorStatus(document)) {
                 pageRepository.save(newPage);
 
-                Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
-                for (Map.Entry<String, Integer> s :
-                        lemmaList.entrySet()) {
-                    String lemmaWord = s.getKey();
-                    int rank = s.getValue();
+                initNewLemmaAndIndex(this.site, newPage, content);
 
-                    Lemma newLemma = new Lemma();
-                    newLemma.setSite(this.site);
-                    newLemma.setLemma(lemmaWord);
-                    newLemma.setFrequency(1);
-
-                    Index newIndex = new Index();
-                    newIndex.setPage(newPage);
-                    newIndex.setLemma(newLemma);
-                    newIndex.setRank(rank);
-
-                    List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, this.site);
-                    if(!foundLemmaList.isEmpty()){
-                        for (Lemma foundLemma : foundLemmaList) {
-                            foundLemma.setFrequency(foundLemma.getFrequency() + 1);
-                            newIndex.setLemma(foundLemma);
-                            lemmaRepository.save(foundLemma);
-                            indexRepository.save(newIndex);
-                        }
-                    }else{
-                        lemmaRepository.save(newLemma);
-                        indexRepository.save(newIndex);
-                    }
-                }
-
-                for (Element s :
-                        elements) {
-                    String entryUrl = s.attr("href");
-
-                    String entryAbsUrl = getAbsUrl(entryUrl);
-                    String entryRelUrl = getRelativeUrl(entryUrl);
-
-                    if (isUrlValid(entryAbsUrl, entryRelUrl)) {
-                        if(!indexing){
-                            taskList.clear();
-                            break;
-                        }
-                        WebCrawler task = new WebCrawler(entryAbsUrl);
-                        taskList.add(task);
-                        task.fork();
-                        this.site.setDateTime(LocalDateTime.now());
-                        siteRepository.save(this.site);
-                    }
-                }
+                taskList = findValidUrlsIn(document);
             }
+
             taskList.forEach(WebCrawler::join);
         }catch (Exception e){
             log.error("error", e);
         }
+    }
+
+    private List<WebCrawler> findValidUrlsIn(Document document) {
+        List<WebCrawler> taskList = new ArrayList<>();
+
+        Elements elements = document.select("a[href]");
+
+        for (Element value :
+                elements) {
+            String entryUrl = value.attr("href");
+
+            String entryAbsUrl = getAbsUrl(entryUrl);
+            String entryRelUrl = getRelativeUrl(entryUrl);
+
+            if(!indexing){
+                taskList.clear();
+                break;
+            }
+
+            if (isUrlValid(entryAbsUrl, entryRelUrl)) {
+                addTask(entryAbsUrl, taskList);
+            }
+        }
+        return taskList;
+    }
+
+    private void addTask(String entryAbsUrl, List<WebCrawler> taskList) {
+        WebCrawler task = new WebCrawler(entryAbsUrl);
+        taskList.add(task);
+        task.fork();
+        this.site.setDateTime(LocalDateTime.now());
+        siteRepository.save(this.site);
+    }
+
+    private void initNewLemmaAndIndex(Site site, Page newPage, String content) throws IOException {
+        LemmaFinder lemmaFinder = new LemmaFinder();
+        Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
+        for (Map.Entry<String, Integer> value :
+                lemmaList.entrySet()) {
+            String lemmaWord = value.getKey();
+            int rank = value.getValue();
+
+            Lemma newLemma = new Lemma();
+            newLemma.setSite(site);
+            newLemma.setLemma(lemmaWord);
+            newLemma.setFrequency(1);
+
+            Index newIndex = new Index();
+            newIndex.setPage(newPage);
+            newIndex.setLemma(newLemma);
+            newIndex.setRank(rank);
+
+            List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, site);
+
+            if(foundLemmaList.isEmpty()){
+                lemmaRepository.save(newLemma);
+                indexRepository.save(newIndex);
+            }else{
+                updateExistingLemmas(foundLemmaList, newIndex);
+            }
+        }
+    }
+
+    private void updateExistingLemmas(List<Lemma> foundLemmaList, Index newIndex) {
+        for (Lemma foundLemma : foundLemmaList) {
+            foundLemma.setFrequency(foundLemma.getFrequency() + 1);
+
+            newIndex.setLemma(foundLemma);
+
+            lemmaRepository.save(foundLemma);
+            indexRepository.save(newIndex);
+        }
+    }
+
+    private boolean hasErrorStatus(Document document) {
+        int statusCode = document.connection().response().statusCode();
+        boolean hasClientError = String.valueOf(statusCode).charAt(0) == '4';
+        boolean hasServerError = String.valueOf(statusCode).charAt(0) == '5';
+
+        return hasClientError || hasServerError;
+    }
+
+    private Page initNewPage(int statusCode, Site site, String content, String relUrl) {
+        Page newPage = new Page();
+        newPage.setCode(statusCode);
+        newPage.setSite(site);
+        newPage.setContent(content);
+        newPage.setPath(relUrl);
+        return newPage;
     }
 
     public String getRelativeUrl(String url) {

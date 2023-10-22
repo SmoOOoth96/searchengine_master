@@ -17,6 +17,8 @@ import searchengine.repositories.IndexRepository;
 import searchengine.repositories.LemmaRepository;
 import searchengine.repositories.PageRepository;
 import searchengine.repositories.SiteRepository;
+import searchengine.utils.LemmaFinder;
+import searchengine.utils.WebCrawler;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -50,7 +52,7 @@ public class IndexingServiceImpl implements IndexingService {
     public ResponseEntity<IndexingResponse> startIndexing() {
         IndexingResponse response = null;
         if(WebCrawler.isIndexing()){
-            response = new IndexingErrorResponse("Индексация уже запущена", false);
+            response = new IndexingErrorResponse("Indexing is already started", false);
             return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }else{
             Thread thread = new Thread(){
@@ -73,26 +75,28 @@ public class IndexingServiceImpl implements IndexingService {
             response = new IndexingSuccessResponse(true);
             return new ResponseEntity<>(response, HttpStatus.OK);
         }else{
-            response = new IndexingErrorResponse("Индексация не запущена", false);
+            response = new IndexingErrorResponse("Indexing is not started", false);
             return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }
     }
 
     @Override
     public ResponseEntity<IndexingResponse> indexPage(String entryUrl) {
-        String domainName = getFullDomainName(entryUrl);
+        String urlToIndex = checkUrl(entryUrl);
+
+        String domainName = getFullDomainName(urlToIndex);
         Site site = siteRepository.findByUrl(domainName);
         IndexingResponse response = null;
         if(site == null){
             response = new IndexingErrorResponse(
-                    "Данная страница находится за пределами сайтов, указанных в конфигурационном файле",
+                    "This page is out of indicated sites in the configuration file",
                     false);
             return new ResponseEntity<>(response, HttpStatus.BAD_REQUEST);
         }
         Thread thread = new Thread(){
             @Override
             public void run() {
-                indexSinglePage(entryUrl);
+                indexSinglePage(urlToIndex);
             }
         };
         thread.start();
@@ -113,23 +117,11 @@ public class IndexingServiceImpl implements IndexingService {
                 }
                 long start = System.currentTimeMillis();
 
-                Status status = Status.INDEXING;
-                LocalDateTime time = LocalDateTime.now();
-                String siteUrl = value.getUrl();
-                String name = value.getName();
-
-                site = new Site();
-                site.setStatus(status);
-                site.setDateTime(time);
-                site.setUrl(siteUrl);
-                site.setName(name);
+                site = insertSiteValues(value);
 
                 siteRepository.save(site);
 
-                WebCrawler rootTask = new WebCrawler(siteUrl, pageRepository, siteRepository, lemmaRepository, indexRepository);
-                WebCrawler.setUserAgent(crawlerConfig.getUserAgent());
-                WebCrawler.setReferrer(crawlerConfig.getReferrer());
-                forkJoinPool.invoke(rootTask);
+                invokeRootTask(site.getUrl());
 
                 if (!WebCrawler.isIndexing()) {
                     throw new IndexingStoppedException();
@@ -147,9 +139,7 @@ public class IndexingServiceImpl implements IndexingService {
         } catch (IndexingStoppedException e) {
             log.error("error", e);
             if (site != null) {
-                site.setStatus(Status.FAILED);
-                site.setLastError("Индексация остановлена пользователем");
-                siteRepository.save(site);
+                setError(site);
                 forkJoinPool.shutdown();
             }
         }catch (Exception e){
@@ -162,31 +152,18 @@ public class IndexingServiceImpl implements IndexingService {
     }
 
     private void stop(){
-        forkJoinPool.shutdownNow();
-        WebCrawler.setIndexing(false);
-        List<Site> siteList = sites.getSites();
-
         try {
-            Thread.sleep(60);
-        } catch (InterruptedException e) {
+            forkJoinPool.shutdownNow();
+            WebCrawler.setIndexing(false);
+            editAllSites();
+        } catch (Exception e) {
             log.error("error", e);
-        }
-
-        for (Site site : siteList) {
-            Site foundSite = siteRepository.findByUrl(site.getUrl());
-            if (foundSite != null && foundSite.getStatus() != Status.INDEXED) {
-                setValues(foundSite);
-            } else {
-                setValues(site);
-            }
         }
     }
 
     private void indexSinglePage(String entryUrl){
         Document document = null;
-        LemmaFinder lemmaFinder = null;
         try {
-            lemmaFinder = new LemmaFinder();
             Thread.sleep(125);
             document = Jsoup.connect(entryUrl)
                     .userAgent(crawlerConfig.getUserAgent())
@@ -201,23 +178,20 @@ public class IndexingServiceImpl implements IndexingService {
             if(document == null){
                 return;
             }
+
+            if(hasErrorStatus(document)){
+                return;
+            }
+
             int statusCode = document.connection().response().statusCode();
             String domainName = getFullDomainName(entryUrl);
             Site site = siteRepository.findByUrl(domainName);
             String relUrl = getRelativeUrl(entryUrl);
             String content = document.outerHtml();
 
-            if(String.valueOf(statusCode).charAt(0) == '4' || String.valueOf(statusCode).charAt(0) == '5'){
-                return;
-            }
+            Page newPage = initNewPage(statusCode, site, content, relUrl);
 
-            Page newPage = new Page();
-            newPage.setCode(statusCode);
-            newPage.setSite(site);
-            newPage.setContent(content);
-            newPage.setPath(relUrl);
-
-            Page foundPage = pageRepository.findByPath(relUrl);
+            Page foundPage = pageRepository.findByPathAndSite(relUrl, site);
 
             if (foundPage != null) {
                 updateExistingPage(foundPage, statusCode, site, content, relUrl);
@@ -226,31 +200,8 @@ public class IndexingServiceImpl implements IndexingService {
                 pageRepository.save(newPage);
             }
 
-            Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
-            for (Map.Entry<String, Integer> s :
-                    lemmaList.entrySet()) {
-                String lemma = s.getKey();
-                int rank = s.getValue();
+            initNewLemmaAndIndex(site, newPage, content);
 
-                Lemma newLemma = new Lemma();
-                newLemma.setSite(site);
-                newLemma.setLemma(lemma);
-                newLemma.setFrequency(1);
-
-                Index newIndex = new Index();
-                newIndex.setPage(newPage);
-                newIndex.setLemma(newLemma);
-                newIndex.setRank(rank);
-
-                List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemma, site);
-
-                if (!foundLemmaList.isEmpty()) {
-                    updateExistingLemmas(foundLemmaList, newIndex);
-                } else {
-                    lemmaRepository.save(newLemma);
-                    indexRepository.save(newIndex);
-                }
-            }
             site.setDateTime(LocalDateTime.now());
             siteRepository.save(site);
         } catch (Exception e) {
@@ -258,12 +209,100 @@ public class IndexingServiceImpl implements IndexingService {
         }
     }
 
+    private Page initNewPage(int statusCode, Site site, String content, String relUrl) {
+        Page newPage = new Page();
+        newPage.setCode(statusCode);
+        newPage.setSite(site);
+        newPage.setContent(content);
+        newPage.setPath(relUrl);
+        return newPage;
+    }
+
+    private void initNewLemmaAndIndex(Site site, Page newPage, String content) throws IOException {
+        LemmaFinder lemmaFinder = new LemmaFinder();
+        Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
+        for (Map.Entry<String, Integer> value :
+                lemmaList.entrySet()) {
+            String lemmaWord = value.getKey();
+            int rank = value.getValue();
+
+            Lemma newLemma = new Lemma();
+            newLemma.setSite(site);
+            newLemma.setLemma(lemmaWord);
+            newLemma.setFrequency(1);
+
+            Index newIndex = new Index();
+            newIndex.setPage(newPage);
+            newIndex.setLemma(newLemma);
+            newIndex.setRank(rank);
+
+            List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, site);
+
+            if (!foundLemmaList.isEmpty()) {
+                updateExistingLemmas(foundLemmaList, newIndex);
+            } else {
+                lemmaRepository.save(newLemma);
+                indexRepository.save(newIndex);
+            }
+        }
+    }
+
+    private boolean hasErrorStatus(Document document) {
+        int statusCode = document.connection().response().statusCode();
+        boolean hasClientError = String.valueOf(statusCode).charAt(0) == '4';
+        boolean hasServerError = String.valueOf(statusCode).charAt(0) == '5';
+
+        return hasClientError || hasServerError;
+    }
+
+    private void editAllSites() throws InterruptedException {
+        List<Site> siteList = sites.getSites();
+
+        Thread.sleep(60);
+
+        for (Site site : siteList) {
+            Site foundSite = siteRepository.findByUrl(site.getUrl());
+            if (foundSite != null && foundSite.getStatus() != Status.INDEXED) {
+                setValues(foundSite);
+            } else {
+                setValues(site);
+            }
+        }
+    }
+
+    private void setError(Site site) {
+        site.setStatus(Status.FAILED);
+        site.setLastError("Indexing is stopped by user");
+        siteRepository.save(site);
+    }
+
+    private void invokeRootTask(String siteUrl) {
+        WebCrawler rootTask = new WebCrawler(siteUrl, pageRepository, siteRepository, lemmaRepository, indexRepository);
+        WebCrawler.setUserAgent(crawlerConfig.getUserAgent());
+        WebCrawler.setReferrer(crawlerConfig.getReferrer());
+        forkJoinPool.invoke(rootTask);
+    }
+
+    private Site insertSiteValues(Site value) {
+        Status status = Status.INDEXING;
+        LocalDateTime time = LocalDateTime.now();
+        String siteUrl = value.getUrl();
+        String name = value.getName();
+
+        Site site = new Site();
+        site.setStatus(status);
+        site.setDateTime(time);
+        site.setUrl(siteUrl);
+        site.setName(name);
+        return site;
+    }
+
     private void setValues(Site site) {
         site.setStatus(Status.FAILED);
         site.setDateTime(LocalDateTime.now());
         site.setUrl(site.getUrl());
         site.setName(site.getName());
-        site.setLastError("Индексация остановлена пользователем");
+        site.setLastError("Indexing is stopped by user");
         siteRepository.save(site);
     }
 
@@ -300,5 +339,33 @@ public class IndexingServiceImpl implements IndexingService {
         Matcher matcher = fullDomainName.matcher(url);
 
         return matcher.find() ? matcher.group() : url;
+    }
+
+    private String changeProtocol(String entryUrl) {
+        String result = entryUrl.substring(4);
+        if(result.startsWith("://www")) {
+            result = "https://" + removeSubdomain(result);
+        }else{
+            result = "https" + result;
+        }
+        return result;
+    }
+
+    private String removeSubdomain(String entryUrl) {
+        if(entryUrl.startsWith("://www")) {
+            return entryUrl.substring(7);
+        }else{
+            return "https://" + entryUrl.substring(12);
+        }
+    }
+
+    private String checkUrl(String entryUrl) {
+        if(entryUrl.startsWith("http:")){
+            return changeProtocol(entryUrl);
+        }else if(entryUrl.startsWith("https://www.")){
+            return removeSubdomain(entryUrl);
+        }else{
+            return entryUrl;
+        }
     }
 }
