@@ -8,7 +8,6 @@ import searchengine.model.Site;
 @Repository
 public interface PageRepository extends JpaRepository<Page, Integer> {
     boolean existsByPathAndSite(String path, Site site);
-    Page findByPath(String path);
-
+    Page findByPathAndSite(String path, Site site);
     int countBySite(Site site);
 }
