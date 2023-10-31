@@ -188,6 +188,7 @@ public class IndexingServiceImpl implements IndexingService {
             Site site = siteRepository.findByUrl(domainName);
             String relUrl = getRelativeUrl(entryUrl);
             String content = document.outerHtml();
+            String bodyText = document.body().text();
 
             Page newPage = initNewPage(statusCode, site, content, relUrl);
 
@@ -200,7 +201,7 @@ public class IndexingServiceImpl implements IndexingService {
                 pageRepository.save(newPage);
             }
 
-            initNewLemmaAndIndex(site, newPage, content);
+            initNewLemmaAndIndex(site, newPage, bodyText);
 
             site.setDateTime(LocalDateTime.now());
             siteRepository.save(site);

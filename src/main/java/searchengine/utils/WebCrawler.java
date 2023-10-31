@@ -64,15 +64,16 @@ public class WebCrawler extends RecursiveAction {
             int statusCode = document.connection().response().statusCode();
             String relUrl = getRelativeUrl(url);
             String content = document.outerHtml();
+            String bodyText = document.body().text();
 
             Page newPage = initNewPage(statusCode, this.site, content, relUrl);
 
-            boolean pageExists = !pageRepository.existsByPathAndSite(relUrl, this.site);
+            boolean pageExists = pageRepository.existsByPathAndSite(relUrl, this.site);
 
-            if(pageExists && hasErrorStatus(document)) {
+            if(!pageExists && !hasErrorStatus(document)) {
                 pageRepository.save(newPage);
 
-                initNewLemmaAndIndex(this.site, newPage, content);
+                initNewLemmaAndIndex(this.site, newPage, bodyText);
 
                 taskList = findValidUrlsIn(document);
             }
