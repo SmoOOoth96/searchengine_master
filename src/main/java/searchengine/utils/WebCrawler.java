@@ -16,9 +16,7 @@ import searchengine.repositories.SiteRepository;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.RecursiveAction;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -117,6 +115,8 @@ public class WebCrawler extends RecursiveAction {
     }
 
     private void initNewLemmaAndIndex(Site site, Page newPage, String content) throws IOException {
+        Set<Index> indexListToSave = new HashSet<>();
+        Set<Lemma> lemmaListToSave = new TreeSet<>((o1, o2) -> o1.getLemma().compareToIgnoreCase(o2.getLemma()));
         LemmaFinder lemmaFinder = new LemmaFinder();
         Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
         for (Map.Entry<String, Integer> value :
@@ -136,23 +136,44 @@ public class WebCrawler extends RecursiveAction {
 
             List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, site);
 
-            if(foundLemmaList.isEmpty()){
-                lemmaRepository.save(newLemma);
-                indexRepository.save(newIndex);
-            }else{
-                updateExistingLemmas(foundLemmaList, newIndex);
+            if(foundLemmaList.isEmpty() && !lemmaListToSave.contains(newLemma)){
+                lemmaListToSave.add(newLemma);
+                indexListToSave.add(newIndex);
+            }else if(!foundLemmaList.isEmpty()){
+                updateExistingLemmas(foundLemmaList, newIndex, lemmaListToSave, indexListToSave);
+            }else if(lemmaListToSave.contains(newLemma)){
+                updateFrequency(newLemma, newIndex, lemmaListToSave);
             }
+        }
+        synchronized (lemmaRepository) {
+            lemmaRepository.saveAll(lemmaListToSave);
+            indexRepository.saveAll(indexListToSave);
         }
     }
 
-    private void updateExistingLemmas(List<Lemma> foundLemmaList, Index newIndex) {
+    private void updateExistingLemmas(List<Lemma> foundLemmaList, Index newIndex, Set<Lemma> lemmaListToSave, Set<Index> indexListToSave) {
         for (Lemma foundLemma : foundLemmaList) {
             foundLemma.setFrequency(foundLemma.getFrequency() + 1);
 
             newIndex.setLemma(foundLemma);
 
-            lemmaRepository.save(foundLemma);
-            indexRepository.save(newIndex);
+            if(lemmaListToSave.contains(foundLemma)) {
+                updateFrequency(foundLemma, newIndex, lemmaListToSave);
+            }
+
+            lemmaListToSave.add(foundLemma);
+            indexListToSave.add(newIndex);
+        }
+    }
+
+    private void updateFrequency(Lemma lemma, Index newIndex, Set<Lemma> lemmaListToSave) {
+        Lemma lemmaFromList = lemmaListToSave.stream().filter(l -> l.equals(lemma)).findAny().get();
+        int frequencyFromList = lemmaFromList.getFrequency();
+        lemmaFromList.setFrequency(lemma.getFrequency() + frequencyFromList);
+        lemmaFromList.setId(lemma.getId());
+        newIndex.setLemma(lemmaFromList);
+        if(lemmaFromList.getId() == 0){
+            lemmaListToSave.add(lemma);
         }
     }
 

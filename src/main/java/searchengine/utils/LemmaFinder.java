@@ -57,11 +57,15 @@ public class LemmaFinder {
                     }
                 }
 
+                if(wordsNormalForm == null){
+                    continue;
+                }
+
                 String normalWord = wordsNormalForm.get(0);
 
                 if (result.containsKey(normalWord)) {
                     result.put(normalWord, result.get(normalWord) + 1);
-                } else {
+                }else{
                     result.put(normalWord, 1);
                 }
             }
