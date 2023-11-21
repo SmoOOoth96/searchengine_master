@@ -50,7 +50,6 @@ public class WebCrawler extends RecursiveAction {
 
     @Override
     public void compute() {
-        List<WebCrawler> taskList = new ArrayList<>();
         try {
             Thread.sleep(150);
             Document document = Jsoup.connect(url)
@@ -73,17 +72,15 @@ public class WebCrawler extends RecursiveAction {
 
                 initNewLemmaAndIndex(this.site, newPage, bodyText);
 
-                taskList = findValidUrlsIn(document);
+                findValidUrlsIn(document);
             }
 
-            taskList.forEach(WebCrawler::join);
         }catch (Exception e){
             log.error("error", e);
         }
     }
 
-    private List<WebCrawler> findValidUrlsIn(Document document) {
-        List<WebCrawler> taskList = new ArrayList<>();
+    private void findValidUrlsIn(Document document) {
 
         Elements elements = document.select("a[href]");
 
@@ -95,28 +92,26 @@ public class WebCrawler extends RecursiveAction {
             String entryRelUrl = getRelativeUrl(entryUrl);
 
             if(!indexing){
-                taskList.clear();
                 break;
             }
 
             if (isUrlValid(entryAbsUrl, entryRelUrl)) {
-                addTask(entryAbsUrl, taskList);
+                addTask(entryAbsUrl);
             }
         }
-        return taskList;
     }
 
-    private void addTask(String entryAbsUrl, List<WebCrawler> taskList) {
+    private void addTask(String entryAbsUrl) {
         WebCrawler task = new WebCrawler(entryAbsUrl);
-        taskList.add(task);
         task.fork();
+        task.join();
         this.site.setDateTime(LocalDateTime.now());
         siteRepository.save(this.site);
     }
 
     private void initNewLemmaAndIndex(Site site, Page newPage, String content) throws IOException {
-        Set<Index> indexListToSave = new HashSet<>();
-        Set<Lemma> lemmaListToSave = new TreeSet<>((o1, o2) -> o1.getLemma().compareToIgnoreCase(o2.getLemma()));
+        Set<Index> indexSetToSave = new HashSet<>();
+        Set<Lemma> lemmaSetToSave = new TreeSet<>((o1, o2) -> o1.getLemma().compareToIgnoreCase(o2.getLemma()));
         LemmaFinder lemmaFinder = new LemmaFinder();
         Map<String, Integer> lemmaList = lemmaFinder.getLemmasAndFrequency(content);
         for (Map.Entry<String, Integer> value :
@@ -136,18 +131,18 @@ public class WebCrawler extends RecursiveAction {
 
             List<Lemma> foundLemmaList = lemmaRepository.findByLemmaAndSite(lemmaWord, site);
 
-            if(foundLemmaList.isEmpty() && !lemmaListToSave.contains(newLemma)){
-                lemmaListToSave.add(newLemma);
-                indexListToSave.add(newIndex);
+            if(foundLemmaList.isEmpty() && !lemmaSetToSave.contains(newLemma)){
+                lemmaSetToSave.add(newLemma);
+                indexSetToSave.add(newIndex);
             }else if(!foundLemmaList.isEmpty()){
-                updateExistingLemmas(foundLemmaList, newIndex, lemmaListToSave, indexListToSave);
-            }else if(lemmaListToSave.contains(newLemma)){
-                updateFrequency(newLemma, newIndex, lemmaListToSave);
+                updateExistingLemmas(foundLemmaList, newIndex, lemmaSetToSave, indexSetToSave);
+            }else if(lemmaSetToSave.contains(newLemma)){
+                updateFrequency(newLemma, newIndex, lemmaSetToSave);
             }
         }
         synchronized (lemmaRepository) {
-            lemmaRepository.saveAll(lemmaListToSave);
-            indexRepository.saveAll(indexListToSave);
+            lemmaRepository.saveAll(lemmaSetToSave);
+            indexRepository.saveAll(indexSetToSave);
         }
     }
 

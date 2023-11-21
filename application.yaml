@@ -3,22 +3,23 @@ server:
 
 spring:
   datasource:
-    username: root
+    username: postgres
     password: 1324fara
-    url: jdbc:mysql://localhost:3306/search_engine?useSSL=false&requireSSL=false&allowPublicKeyRetrieval=true&cachePrepStmts=true&useServerPrepStmts=true&rewriteBatchedStatements=true
+    url: jdbc:postgresql://localhost:5432/search_engine?rewriteBatchedStatements=true
     hikari:
+      data-source-properties:
+        reWriteBatchedInserts: true
       maxLifeTime: 300000
   jpa:
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
+        dialect: org.hibernate.dialect.PostgreSQLDialect
         order_inserts: true
         order_updates: true
         generate_statistics: true
-        jdbc.batch_size: 1000
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false
 # example values
 
 indexing-settings:

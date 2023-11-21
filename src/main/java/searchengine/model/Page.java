@@ -7,7 +7,7 @@ import lombok.Data;
 import java.util.List;
 
 @Entity
-@Table(name = "Page")
+@Table(name = "Page", indexes = @jakarta.persistence.Index(columnList = "path, site_id", unique = true, name = "pathIndex"))
 @Data
 public class Page {
     @Id
@@ -23,12 +23,12 @@ public class Page {
     @OneToMany(cascade = CascadeType.ALL, mappedBy = "page")
     private List<Index> indexList;
 
-    @Column(name = "path", columnDefinition = "TEXT NOT NULL, UNIQUE KEY pathIndex (path(256), site_id)")
+    @Column(name = "path", columnDefinition = "TEXT NOT NULL")
     private String path;
 
     @Column(name = "code")
     private int code;
 
-    @Column(name = "content", columnDefinition = "MEDIUMTEXT")
+    @Column(name = "content", columnDefinition = "TEXT")
     private String content;
 }

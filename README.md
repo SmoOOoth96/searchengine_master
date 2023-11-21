@@ -1,28 +1,28 @@
 ![SEarchit (1).png](https://i.postimg.cc/0NhCtQjL/SEarchit-1.png)
 
-SearchIT поисковый движок на Java.
+SearchIT search engine in Java.
 
-Возможности программы:
+Program features:
 
-Dashboard - показывает статистику по леммам, страницам и сайтам
+Dashboard - shows statistics on lemmas, pages and sites
 
 ![img.png](https://i.postimg.cc/dVtZGYsr/img.png)
 
-Management - при нажатии на кнопку Start indexing запускает полную индексацию всех сайтов и при нажатии Stop indexing остановить полную индексацию. Есть возможность проиндексировать отдельную страницу сайта в поле ввода и нажать на кнопку add/update
+Management - by clicking (Start indexing) button, it starts full indexing of all sites and by clicking (Stop indexing) button it stops the full indexing. It is also possible to index a separate page of the site in the input field and click on the (add/update) button
 
 ![img_1.png](https://i.postimg.cc/CKCy0W8r/img-1.png)
 
-Search - делает поиск по введенному слову по всем проиндексированным сайтам либо по выбранному в выпадающем списке
+Search - searches for the entered word across all indexed sites or selected in the drop-down list
 
 ![img_2.png](https://i.postimg.cc/L6fFvYXM/img-2.png)
 
-Технологии:
+Technologies:
 
 1)Java 20
 
 2)Spring 3.1.1
 
-3)MySQL
+3)PostgreSQL
 
 4)Jsoup
 
@@ -30,14 +30,14 @@ Search - делает поиск по введенному слову по вс�
 
 6)Lombok
 
-Настройка:
+Setup:
 
-1)Создать пустую базу данных search_engine и использовать кодировку utf8mb4
+1)Create an empty search_engine database in PostgreSQL
 
-2)Скачать файл конфигурации application.yaml и установить логин и пароль
+2)Download the application.yaml configuration file and set the login and password
 
-3)Указать сайты для индексации
+3)Enter the sites for indexing in the application.yaml configuration file
 
-4)Запустить приложение с командной строки jar файл с помощью команды java -jar SearchEngine-1.0.jar
+4)Run the application from the command line jar file using the command (java -jar SearchEngine-1.0.jar)
 
-5)Перейдите по адресу http://localhost:8080/ в браузере
+5)Go to http://localhost:8080/ in a browser
